@@ -1,13 +1,1 @@
-{
-  "env": {
-    "ANTHROPIC_AUTH_TOKEN": "sk-sp-3d94683efa744e2e8350ba945f45226c",
-    "ANTHROPIC_BASE_URL":  "https://coding.dashscope.aliyuncs.com/apps/anthropic",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "kimi-k2.5",
-    "ANTHROPIC_DEFAULT_OPUS_MODEL": "kimi-k2.5",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL": "kimi-k2.5",
-    "ANTHROPIC_MODEL": "kimi-k2.5",
-    "ANTHROPIC_REASONING_MODEL": "kimi-k2.5",
-    "API_TIMEOUT_MS": "3000000",
-  },
-  "includeCoAuthoredBy": false
-}
+
