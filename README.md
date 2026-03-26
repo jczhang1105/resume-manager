@@ -30,12 +30,24 @@ npm run dev
 
 ### Vercel 一键部署
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fjczhang1105%2Fresume-manager)
 
+或者手动：
 1. Fork 本仓库到 GitHub
 2. 在 Vercel 导入项目
-3. 配置环境变量（可选）
-4. 点击 Deploy
+3. 点击 Deploy
+
+## 更新流程
+
+本地修改后，推送到 GitHub，Vercel 会自动重新部署：
+
+```bash
+git add .
+git commit -m "描述你的修改"
+git push origin main
+```
+
+等待 1-2 分钟，访问线上地址即可看到更新。
 
 ## 使用说明
 
