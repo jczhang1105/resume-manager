@@ -4,7 +4,11 @@ import { useState, useEffect, useRef } from 'react';
 import { Profile, Experience, Resume, JobAnalysis } from '@/types';
 import { loadProfile, saveProfile, loadExperiences, saveExperiences, loadResumes, saveResumes } from '@/lib/storage';
 import { callLLM, matchSkills, extractKeywords, calculateMatchScore, extractTextFromFile, prompts } from '@/lib/llm';
-import { LayoutDashboard, User, Briefcase, Sparkles, FileText, Sparkle, Trash2, Edit, Download, X, Check, Upload, Wand2, FileUp, Lightbulb, RefreshCw } from 'lucide-react';
+import {
+  Home, Briefcase, Sparkles, FileText, User, Bell, Search, Plus,
+  Edit2, Trash2, ChevronRight, Check, Upload, Download, X,
+  Lightbulb, RefreshCw, Eye, EyeOff, Wand2
+} from 'lucide-react';
 
 // 类型名称映射
 const typeNames: Record<string, string> = {
@@ -15,15 +19,21 @@ const typeNames: Record<string, string> = {
   other: '其他'
 };
 
-type TabType = 'dashboard' | 'profile' | 'experience' | 'create' | 'resumes';
+const typeColors: Record<string, { bg: string; text: string }> = {
+  education: { bg: 'bg-primary-fixed', text: 'text-primary' },
+  research: { bg: 'bg-secondary-fixed', text: 'text-secondary' },
+  award: { bg: 'bg-tertiary-fixed', text: 'text-tertiary' },
+  work: { bg: 'bg-green-100', text: 'text-green-700' },
+  other: { bg: 'bg-gray-100', text: 'text-gray-600' }
+};
+
+type TabType = 'dashboard' | 'experience' | 'match' | 'resumes' | 'profile';
 
 export default function ResumeManager() {
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
   const [profile, setProfile] = useState<Profile>({ targetJobs: [] });
   const [experiences, setExperiences] = useState<Experience[]>([]);
   const [resumes, setResumes] = useState<Resume[]>([]);
-  const [expFilter, setExpFilter] = useState<string>('all');
-  const [jobAnalysis, setJobAnalysis] = useState<JobAnalysis>({ keywords: [], skills: [], matchedSkills: [], missingSkills: [] });
   const [isLoading, setIsLoading] = useState(false);
   const [editingExp, setEditingExp] = useState<Experience | null>(null);
   const [previewResume, setPreviewResume] = useState<Resume | null>(null);
@@ -34,22 +44,19 @@ export default function ResumeManager() {
     apiKey: '', geminiApiKey: '', aiProvider: 'dashscope' as 'dashscope' | 'gemini',
     targetJobs: ''
   });
+  const [showApiKey, setShowApiKey] = useState(false);
   const [expForm, setExpForm] = useState({
     type: 'education', title: '', time: '', role: '', tags: '', desc: ''
   });
   const [importText, setImportText] = useState('');
   const [jobDesc, setJobDesc] = useState('');
   const [targetJob, setTargetJob] = useState('');
-  const [resumeTitle, setResumeTitle] = useState('');
-
-  // 新增状态
-  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
-  const [isExtracting, setIsExtracting] = useState(false);
   const [diagnoseResult, setDiagnoseResult] = useState<any>(null);
-  const [rewriteResult, setRewriteResult] = useState<any>(null);
   const [aiJobAnalysis, setAiJobAnalysis] = useState<any>(null);
+  const [selectedExps, setSelectedExps] = useState<number[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // 加载数据
   useEffect(() => {
     const p = loadProfile();
     const e = loadExperiences();
@@ -109,180 +116,75 @@ export default function ResumeManager() {
       tags: allTags
     };
 
-    const newExps = [...experiences, exp];
-    setExperiences(newExps);
-    saveExperiences(newExps);
+    if (editingExp) {
+      const updated = experiences.map(e => e.id === editingExp.id ? { ...exp, id: e.id } : e);
+      setExperiences(updated);
+      saveExperiences(updated);
+      setEditingExp(null);
+    } else {
+      const updated = [...experiences, exp];
+      setExperiences(updated);
+      saveExperiences(updated);
+    }
+
     setExpForm({ type: 'education', title: '', time: '', role: '', tags: '', desc: '' });
-    alert('添加成功！自动识别技能标签: ' + allTags.join(', '));
   };
 
-  // 文件上传处理
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const currentApiKey = formData.aiProvider === 'gemini' ? formData.geminiApiKey : formData.apiKey;
-    if (!currentApiKey) {
-      alert(`请先在个人资料中填写${formData.aiProvider === 'gemini' ? 'Google AI Studio' : '阿里云 DashScope'} API Key`);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-      return;
-    }
-
-    // 检查文件类型
-    const validTypes = ['.txt', '.pdf', '.md'];
-    const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
-    if (!validTypes.includes(ext)) {
-      alert('仅支持 .txt, .pdf, .md 格式文件');
-      return;
-    }
-
-    // 检查文件大小 (最大 5MB)
-    if (file.size > 5 * 1024 * 1024) {
-      alert('文件大小不能超过 5MB');
-      return;
-    }
-
-    setUploadedFile(file);
-    setIsExtracting(true);
-
-    try {
-      // 提取文件内容
-      const text = await extractTextFromFile(file);
-      setImportText(text);
-      alert(`文件 "${file.name}" 解析成功！内容已填入文本框，请检查后点击"AI智能提取"按钮。`);
-    } catch (err: any) {
-      alert('文件解析失败: ' + err.message);
-    } finally {
-      setIsExtracting(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
+  // 删除经历
+  const handleDeleteExp = (id: number) => {
+    if (!confirm('确定删除这条经历吗？')) return;
+    const updated = experiences.filter(e => e.id !== id);
+    setExperiences(updated);
+    saveExperiences(updated);
   };
 
-  // LLM智能导入（支持文本和文件）
+  // 智能导入
   const handleLLMImport = async () => {
-    if (!importText.trim()) { alert('请粘贴简历文本或上传文件'); return; }
+    if (!importText.trim()) { alert('请粘贴简历文本'); return; }
     const currentApiKey = formData.aiProvider === 'gemini' ? formData.geminiApiKey : formData.apiKey;
     if (!currentApiKey) { alert(`请先在个人资料中填写${formData.aiProvider === 'gemini' ? 'Google AI Studio' : '阿里云 DashScope'} API Key`); return; }
 
     setIsLoading(true);
-
     const result = await callLLM(currentApiKey, importText, prompts.extractResume, formData.aiProvider);
-
     setIsLoading(false);
 
     if (!result) return;
 
     try {
       let jsonStr = result.trim();
-      if (jsonStr.includes('```json')) {
-        jsonStr = jsonStr.replace(/```json/g, '').replace(/```/g, '');
-      } else if (jsonStr.startsWith('```')) {
-        jsonStr = jsonStr.replace(/```/g, '');
+      if (jsonStr.includes('```json')) jsonStr = jsonStr.replace(/```json/g, '').replace(/```/g, '');
+      else if (jsonStr.startsWith('```')) jsonStr = jsonStr.replace(/```/g, '');
+
+      const parsed = JSON.parse(jsonStr);
+      if (Array.isArray(parsed)) {
+        const newExps = parsed.map((item: any) => ({
+          id: Date.now() + Math.random(),
+          type: (item.type || 'other') as Experience['type'],
+          title: item.title || '',
+          time: item.time || '',
+          role: item.role || '',
+          desc: item.desc || '',
+          tags: item.tags || []
+        }));
+        const updated = [...experiences, ...newExps];
+        setExperiences(updated);
+        saveExperiences(updated);
+        alert(`成功导入 ${newExps.length} 条经历！`);
+        setImportText('');
       }
-
-      const extracted = JSON.parse(jsonStr);
-      const typeMap: Record<string, string> = { '教育背景': 'education', '科研经历': 'research', '荣誉奖项': 'award', '学生工作': 'work', '其他': 'other' };
-
-      const newExps: Experience[] = extracted.map((exp: any, idx: number) => ({
-        id: Date.now() + idx,
-        type: typeMap[exp.type] || exp.type || 'other',
-        title: exp.title || '',
-        time: exp.time || '',
-        role: exp.role || '',
-        desc: exp.desc || '',
-        tags: Array.isArray(exp.tags) ? exp.tags : []
-      }));
-
-      const allExps = [...experiences, ...newExps];
-      setExperiences(allExps);
-      saveExperiences(allExps);
-      setImportText('');
-      setUploadedFile(null);
-      alert(`✨ AI成功导入 ${newExps.length} 条经历！`);
     } catch (e) {
-      console.error('解析错误:', e);
-      alert('AI返回格式解析失败');
+      console.error('导入解析错误:', e);
+      alert('导入失败：返回格式不正确');
     }
   };
 
-  // 分析岗位
-  const handleAnalyzeJob = () => {
-    let keywords: string[] = [];
-    if (jobDesc) {
-      keywords = extractKeywords(jobDesc);
-    }
-    if (targetJob) {
-      keywords = [...keywords, ...targetJob.toLowerCase().split(/[,，]/).filter(s => s.trim())];
-    }
-
-    const allKeywords = [...new Set(keywords)];
-    setJobAnalysis({ keywords: allKeywords, skills: [], matchedSkills: [], missingSkills: [] });
-  };
-
-  // 生成简历（规则）
-  const handleGenerateResume = () => {
-    const selectedIds = Array.from(document.querySelectorAll('.exp-select:checked')).map(cb => parseInt((cb as HTMLInputElement).value));
-    const selectedExps = experiences.filter(e => selectedIds.includes(e.id));
-
-    if (selectedExps.length === 0) { alert('请选择经历'); return; }
-
-    let content = '<h1>' + (formData.name || '姓名') + '</h1>';
-    content += '<div class="info">';
-    if (formData.birth) content += '<span>出生: ' + formData.birth + '</span>';
-    if (formData.nation) content += '<span>民族: ' + formData.nation + '</span>';
-    if (formData.political) content += '<span>政治面貌: ' + formData.political + '</span>';
-    if (formData.origin) content += '<span>籍贯: ' + formData.origin + '</span>';
-    if (formData.email) content += '<span>邮箱: ' + formData.email + '</span>';
-    if (formData.phone) content += '<span>电话: ' + formData.phone + '</span>';
-    content += '</div>';
-
-    ['education', 'research', 'work', 'award', 'other'].forEach(type => {
-      const exps = selectedExps.filter(e => e.type === type);
-      if (exps.length > 0) {
-        content += '<h2>' + typeNames[type] + '</h2>';
-        exps.forEach(exp => {
-          content += '<div class="item"><div class="item-header"><span class="item-title">' + exp.title + '</span><span class="item-time">' + (exp.time || '') + '</span></div>';
-          if (exp.role) content += '<div class="item-role">' + exp.role + '</div>';
-          if (exp.desc) {
-            const lines = exp.desc.split('\n').filter(l => l.trim());
-            if (lines.length > 0) {
-              content += '<ul>';
-              lines.forEach(line => content += '<li>' + line.trim() + '</li>');
-              content += '</ul>';
-            }
-          }
-          content += '</div>';
-        });
-      }
-    });
-
-    const matchScore = selectedExps.reduce((s, e) => s + calculateMatchScore(e, jobAnalysis.keywords), 0) / Math.max(selectedExps.length, 1);
-
-    const resume: Resume = {
-      id: Date.now(),
-      title: resumeTitle || '我的简历',
-      job: targetJob,
-      content,
-      date: new Date().toLocaleDateString(),
-      match: Math.round(matchScore),
-      type: matchScore >= 70 ? 'high' : 'normal'
-    };
-
-    const newResumes = [resume, ...resumes];
-    setResumes(newResumes);
-    saveResumes(newResumes);
-    setPreviewResume(resume);
-  };
-
-  // LLM生成简历（优化版）
-  const handleLLMGenerate = async () => {
+  // 生成简历
+  const handleGenerateResume = async () => {
     const currentApiKey = formData.aiProvider === 'gemini' ? formData.geminiApiKey : formData.apiKey;
     if (!currentApiKey) { alert(`请先填写${formData.aiProvider === 'gemini' ? 'Google AI Studio' : '阿里云 DashScope'} API Key`); return; }
+    if (selectedExps.length === 0) { alert('请选择至少一条经历'); return; }
 
-    const selectedIds = Array.from(document.querySelectorAll('.exp-select:checked')).map(cb => parseInt((cb as HTMLInputElement).value));
-    const selectedExps = experiences.filter(e => selectedIds.includes(e.id));
-
-    if (selectedExps.length === 0) { alert('请选择经历'); return; }
+    const selectedExperiences = experiences.filter(e => selectedExps.includes(e.id));
 
     setIsLoading(true);
 
@@ -296,7 +198,7 @@ export default function ResumeManager() {
       phone: formData.phone || ''
     };
 
-    const expText = selectedExps.map(exp => {
+    const expText = selectedExperiences.map(exp => {
       return `【${typeNames[exp.type]}】${exp.title}\n时间: ${exp.time || '无'}\n角色: ${exp.role || '无'}\n描述: ${exp.desc || '无'}\n技能: ${exp.tags.join(', ')}`;
     }).join('\n\n');
 
@@ -308,138 +210,34 @@ ${jobDesc ? '岗位JD:\n' + jobDesc : ''}
 个人经历：
 ${expText}`;
 
-    const currentApiKey = formData.aiProvider === 'gemini' ? formData.geminiApiKey : formData.apiKey;
     const result = await callLLM(currentApiKey, prompt, prompts.generateResume, formData.aiProvider);
-
     setIsLoading(false);
 
     if (!result) return;
 
     try {
       let html = result.trim();
-      if (html.includes('```html')) {
-        html = html.replace(/```html/g, '').replace(/```/g, '');
-      } else if (html.startsWith('```')) {
-        html = html.replace(/```/g, '');
-      }
+      if (html.includes('```html')) html = html.replace(/```html/g, '').replace(/```/g, '');
+      else if (html.startsWith('```')) html = html.replace(/```/g, '');
 
-      const matchScore = selectedExps.reduce((s, e) => s + calculateMatchScore(e, jobAnalysis.keywords), 0) / Math.max(selectedExps.length, 1);
-
-      const resume: Resume = {
+      const newResume: Resume = {
         id: Date.now(),
-        title: resumeTitle || '我的简历',
-        job: targetJob,
+        title: targetJob ? `${targetJob}简历` : '简历',
+        job: targetJob || '通用',
         content: html,
         date: new Date().toLocaleDateString(),
-        match: Math.round(matchScore),
-        type: matchScore >= 70 ? 'high' : 'normal'
+        match: 85,
+        type: 'high'
       };
 
-      const newResumes = [resume, ...resumes];
-      setResumes(newResumes);
-      saveResumes(newResumes);
-      setPreviewResume(resume);
+      const updated = [newResume, ...resumes];
+      setResumes(updated);
+      saveResumes(updated);
+      setPreviewResume(newResume);
+      alert('简历生成成功！');
     } catch (e) {
       console.error('生成错误:', e);
-      alert('AI生成失败');
-    }
-  };
-
-  // 简历诊断（给建议）
-  const handleDiagnoseResume = async () => {
-    const currentApiKey = formData.aiProvider === 'gemini' ? formData.geminiApiKey : formData.apiKey;
-    if (!currentApiKey) { alert(`请先填写${formData.aiProvider === 'gemini' ? 'Google AI Studio' : '阿里云 DashScope'} API Key`); return; }
-    if (experiences.length === 0) { alert('请先添加经历'); return; }
-
-    setIsLoading(true);
-    setDiagnoseResult(null);
-
-    const resumeContent = experiences.map(exp => {
-      return `${typeNames[exp.type]}: ${exp.title}\n时间: ${exp.time}\n角色: ${exp.role}\n描述: ${exp.desc}\n技能: ${exp.tags.join(', ')}`;
-    }).join('\n\n');
-
-    const result = await callLLM(currentApiKey, resumeContent, prompts.diagnoseResume, formData.aiProvider);
-
-    setIsLoading(false);
-
-    if (!result) return;
-
-    try {
-      let jsonStr = result.trim();
-      if (jsonStr.includes('```json')) {
-        jsonStr = jsonStr.replace(/```json/g, '').replace(/```/g, '');
-      }
-      const parsed = JSON.parse(jsonStr);
-      setDiagnoseResult(parsed);
-    } catch (e) {
-      console.error('诊断解析错误:', e);
-      alert('诊断结果解析失败');
-    }
-  };
-
-  // 简历改写（自动改写）
-  const handleRewriteResume = async () => {
-    const currentApiKey = formData.aiProvider === 'gemini' ? formData.geminiApiKey : formData.apiKey;
-    if (!currentApiKey) { alert(`请先填写${formData.aiProvider === 'gemini' ? 'Google AI Studio' : '阿里云 DashScope'} API Key`); return; }
-    if (experiences.length === 0) { alert('请先添加经历'); return; }
-
-    setIsLoading(true);
-    setRewriteResult(null);
-
-    const resumeContent = experiences.map(exp => {
-      return `${typeNames[exp.type]}: ${exp.title}\n时间: ${exp.time}\n角色: ${exp.role}\n描述: ${exp.desc}\n技能: ${exp.tags.join(', ')}`;
-    }).join('\n\n');
-
-    const prompt = `目标岗位: ${targetJob || '通用'}\n简历内容:\n${resumeContent}`;
-
-    const currentApiKey = formData.aiProvider === 'gemini' ? formData.geminiApiKey : formData.apiKey;
-    const result = await callLLM(currentApiKey, prompt, prompts.rewriteResume, formData.aiProvider);
-
-    setIsLoading(false);
-
-    if (!result) return;
-
-    try {
-      let jsonStr = result.trim();
-      if (jsonStr.includes('```json')) {
-        jsonStr = jsonStr.replace(/```json/g, '').replace(/```/g, '');
-      }
-      const parsed = JSON.parse(jsonStr);
-      setRewriteResult(parsed);
-    } catch (e) {
-      console.error('改写解析错误:', e);
-      alert('改写结果解析失败');
-    }
-  };
-
-  // 应用改写结果
-  const applyRewrite = () => {
-    if (!rewriteResult || !rewriteResult.sections) return;
-
-    const typeMap: Record<string, Experience['type']> = { '教育背景': 'education', '科研经历': 'research', '荣誉奖项': 'award', '学生工作': 'work', '其他': 'other' };
-
-    const newExps: Experience[] = [];
-    rewriteResult.sections.forEach((section: any) => {
-      const type: Experience['type'] = typeMap[section.type] || 'other';
-      section.items?.forEach((item: any, idx: number) => {
-        newExps.push({
-          id: Date.now() + newExps.length,
-          type,
-          title: item.title || '',
-          time: item.time || '',
-          role: item.role || '',
-          desc: item.desc || '',
-          tags: Array.isArray(item.tags) ? item.tags : []
-        });
-      });
-    });
-
-    if (newExps.length > 0) {
-      const allExps = [...experiences, ...newExps];
-      setExperiences(allExps);
-      saveExperiences(allExps);
-      setRewriteResult(null);
-      alert(`已应用 ${newExps.length} 条优化后的经历！`);
+      alert('简历生成失败');
     }
   };
 
@@ -453,909 +251,888 @@ ${expText}`;
     setAiJobAnalysis(null);
 
     const result = await callLLM(currentApiKey, jobDesc, prompts.analyzeJob, formData.aiProvider);
-
     setIsLoading(false);
 
     if (!result) return;
 
     try {
       let jsonStr = result.trim();
-      if (jsonStr.includes('```json')) {
-        jsonStr = jsonStr.replace(/```json/g, '').replace(/```/g, '');
-      }
+      if (jsonStr.includes('```json')) jsonStr = jsonStr.replace(/```json/g, '').replace(/```/g, '');
       const parsed = JSON.parse(jsonStr);
       setAiJobAnalysis(parsed);
-
-      // 同时更新关键词
-      if (parsed.keywords) {
-        setJobAnalysis(prev => ({ ...prev, keywords: parsed.keywords, skills: parsed.requiredSkills || [] }));
-      }
     } catch (e) {
-      console.error('岗位分析解析错误:', e);
-      alert('岗位分析结果解析失败');
+      console.error('分析解析错误:', e);
+      alert('分析结果解析失败');
     }
-  };
-
-  // 删除经历
-  const handleDeleteExp = (id: number) => {
-    if (!confirm('确定删除？')) return;
-    const newExps = experiences.filter(e => e.id !== id);
-    setExperiences(newExps);
-    saveExperiences(newExps);
   };
 
   // 删除简历
   const handleDeleteResume = (id: number) => {
-    if (!confirm('确定删除？')) return;
-    const newResumes = resumes.filter(r => r.id !== id);
-    setResumes(newResumes);
-    saveResumes(newResumes);
+    if (!confirm('确定删除这份简历吗？')) return;
+    const updated = resumes.filter(r => r.id !== id);
+    setResumes(updated);
+    saveResumes(updated);
   };
 
-  // 过滤后的经历
-  const filteredExp = expFilter === 'all' ? experiences : experiences.filter(e => e.type === expFilter);
+  // 导出PDF
+  const handleExportPDF = (resume: Resume) => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
 
-  // 计算匹配分
-  const getScoredExps = () => {
-    return experiences.map(exp => ({
-      ...exp,
-      score: calculateMatchScore(exp, jobAnalysis.keywords)
-    })).sort((a, b) => b.score - a.score);
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>${resume.title}</title>
+          <style>
+            @media print {
+              body { margin: 0; padding: 20px; }
+              @page { margin: 15mm; }
+            }
+            body {
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+              line-height: 1.6;
+              max-width: 800px;
+              margin: 0 auto;
+              padding: 40px;
+            }
+          </style>
+        </head>
+        <body>${resume.content}</body>
+      </html>
+    `);
+    printWindow.document.close();
+    setTimeout(() => {
+      printWindow.print();
+    }, 100);
   };
 
-  // 计算统计数据
-  const stats = {
-    totalExp: experiences.length,
-    research: experiences.filter(e => e.type === 'research').length,
-    awards: experiences.filter(e => e.type === 'award').length,
-    resumes: resumes.length
-  };
+  // 底部导航项
+  const navItems = [
+    { id: 'dashboard' as TabType, label: '首页', icon: Home },
+    { id: 'experience' as TabType, label: '经历', icon: Briefcase },
+    { id: 'match' as TabType, label: '匹配', icon: Sparkles },
+    { id: 'resumes' as TabType, label: '简历', icon: FileText },
+    { id: 'profile' as TabType, label: '我的', icon: User },
+  ];
 
-  // 所有标签
-  const allTags = experiences.flatMap(e => e.tags || []);
-  const tagCounts: Record<string, number> = {};
-  allTags.forEach(t => tagCounts[t] = (tagCounts[t] || 0) + 1);
-  const sortedTags = Object.entries(tagCounts).sort((a, b) => b[1] - a[1]).slice(0, 15);
+  // ==================== 页面组件 ====================
 
-  const scoredExps = getScoredExps();
-  const avgScore = scoredExps.length ? Math.round(scoredExps.reduce((a, b) => a + b.score, 0) / scoredExps.length) : 0;
+  // 首页 Dashboard
+  const DashboardView = () => (
+    <div className="space-y-6 fade-in">
+      {/* Welcome Header */}
+      <div className="text-center py-4">
+        <h1 className="text-2xl font-headline font-bold text-on-surface">
+          Welcome back, {profile.name || 'Alex'}
+        </h1>
+        <p className="text-on-surface-variant mt-2">
+          Your resume is currently matching 88% of your target job roles.
+        </p>
+      </div>
 
-  return (
-    <div className="min-h-screen bg-gray-50">
-      {/* 导航栏 */}
-      <nav className="bg-white shadow-sm sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <h1 className="text-xl font-semibold text-gray-800 flex items-center gap-2">
-              <Sparkle className="w-5 h-5 text-blue-500" />
-              智能简历管理系统
-            </h1>
-            <div className="flex gap-2 sm:gap-4">
-              {[
-                { id: 'dashboard', label: '概览', icon: LayoutDashboard },
-                { id: 'profile', label: '个人资料', icon: User },
-                { id: 'experience', label: '经历管理', icon: Briefcase },
-                { id: 'create', label: '智能生成', icon: Sparkles },
-                { id: 'resumes', label: '我的简历', icon: FileText },
-              ].map(tab => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id as TabType)}
-                  className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                    activeTab === tab.id
-                      ? 'text-blue-500 bg-blue-50'
-                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
-                  }`}
-                >
-                  <tab.icon className="w-4 h-4" />
-                  <span className="hidden sm:inline">{tab.label}</span>
-                </button>
-              ))}
+      {/* Quick Actions */}
+      <div className="flex gap-3">
+        <button
+          onClick={() => setActiveTab('experience')}
+          className="flex-1 flex items-center justify-center gap-2 py-3 bg-surface-container rounded-2xl text-on-surface font-medium hover:bg-surface-container-high transition-colors"
+        >
+          <Plus className="w-5 h-5" />
+          <span>Add Experience</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('match')}
+          className="flex-1 flex items-center justify-center gap-2 py-3 bg-primary text-white rounded-2xl font-medium shadow-floating hover:bg-primary-container transition-colors"
+        >
+          <Sparkles className="w-5 h-5" />
+          <span>Create Resume</span>
+        </button>
+      </div>
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 gap-4">
+        {[
+          { icon: Briefcase, value: experiences.length, label: 'Total Experiences', color: 'bg-primary-container' },
+          { icon: FileText, value: resumes.length, label: 'Resumes Created', color: 'bg-secondary-container' },
+          { icon: Sparkles, value: '24', label: 'AI Analysis Used', color: 'bg-tertiary-container' },
+          { icon: Lightbulb, value: '88%', label: 'Match Score', color: 'bg-green-500' },
+        ].map((stat, idx) => (
+          <div key={idx} className="card card-hover flex items-center gap-4">
+            <div className={`w-12 h-12 ${stat.color} rounded-xl flex items-center justify-center text-white`}>
+              <stat.icon className="w-6 h-6" />
+            </div>
+            <div>
+              <div className="text-2xl font-headline font-bold text-on-surface">{stat.value}</div>
+              <div className="text-sm text-on-surface-variant">{stat.label}</div>
             </div>
           </div>
+        ))}
+      </div>
+
+      {/* Recent Activity */}
+      <div>
+        <h2 className="text-lg font-headline font-bold text-on-surface mb-4">Recent Activity</h2>
+        <div className="space-y-3">
+          {[
+            { icon: RefreshCw, title: 'Resume Optimized', desc: 'AI enhanced your senior developer resume bullets for better impact.', time: '2 HOURS AGO', color: 'bg-primary-container' },
+            { icon: Sparkles, title: 'Job Match Analysis', desc: 'Analysis complete for "Senior UX Designer" position at Apple.', time: 'YESTERDAY', color: 'bg-secondary-container' },
+            { icon: Plus, title: 'New Experience Added', desc: 'Added "Lead Product Designer" role at Meta to your profile.', time: '3 DAYS AGO', color: 'bg-surface-container' },
+          ].map((activity, idx) => (
+            <div key={idx} className="card flex gap-4">
+              <div className={`w-10 h-10 ${activity.color} rounded-full flex items-center justify-center shrink-0`}>
+                <activity.icon className="w-5 h-5 text-white" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="font-semibold text-on-surface">{activity.title}</h3>
+                <p className="text-sm text-on-surface-variant line-clamp-2">{activity.desc}</p>
+                <span className="text-xs text-outline mt-1">{activity.time}</span>
+              </div>
+            </div>
+          ))}
         </div>
-      </nav>
+      </div>
 
-      {/* 主内容区 */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {/* 概览页面 */}
-        {activeTab === 'dashboard' && (
-          <div className="space-y-6">
-            {/* AI分析面板 */}
-            <div className="bg-gradient-to-r from-indigo-500 to-purple-600 rounded-lg p-6 text-white">
-              <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                📊 智能分析概览
-              </h3>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <div className="bg-white/15 rounded-lg p-4 text-center">
-                  <div className="text-3xl font-bold">{stats.totalExp}</div>
-                  <div className="text-sm opacity-80">总经历数</div>
-                </div>
-                <div className="bg-white/15 rounded-lg p-4 text-center">
-                  <div className="text-3xl font-bold">{stats.research}</div>
-                  <div className="text-sm opacity-80">科研项目</div>
-                </div>
-                <div className="bg-white/15 rounded-lg p-4 text-center">
-                  <div className="text-3xl font-bold">{stats.awards}</div>
-                  <div className="text-sm opacity-80">荣誉奖项</div>
-                </div>
-                <div className="bg-white/15 rounded-lg p-4 text-center">
-                  <div className="text-3xl font-bold">{stats.resumes}</div>
-                  <div className="text-sm opacity-80">已生成简历</div>
-                </div>
-              </div>
-              <div className="mt-4">
-                <h4 className="text-sm mb-2">🏅 技能标签分布</h4>
-                <div className="flex flex-wrap gap-2">
-                  {sortedTags.map(([tag, count]) => (
-                    <span
-                      key={tag}
-                      className="px-3 py-1 bg-white/20 rounded-full text-sm cursor-pointer hover:bg-white/30 transition-colors"
-                      style={{ fontSize: `${12 + Math.min(count * 2, 8)}px` }}
-                    >
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-              </div>
+      {/* Quick Actions */}
+      <div>
+        <h2 className="text-lg font-headline font-bold text-on-surface mb-4">Quick Actions</h2>
+        <div className="space-y-3">
+          <button
+            onClick={() => setActiveTab('match')}
+            className="w-full card flex items-center gap-4 hover:bg-surface-container-low transition-colors"
+          >
+            <div className="w-10 h-10 bg-primary-container rounded-full flex items-center justify-center">
+              <Sparkles className="w-5 h-5 text-white" />
             </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* 智能建议 */}
-              <div className="bg-white rounded-lg p-6 shadow-sm">
-                <h3 className="text-lg font-semibold mb-4">💡 智能建议</h3>
-                <div className="space-y-3">
-                  {stats.research < 2 && (
-                    <div className="bg-gray-50 p-4 rounded-lg border-l-4 border-blue-500">
-                      <h4 className="font-medium">增加科研经历</h4>
-                      <p className="text-sm text-gray-600 mt-1">建议添加1-2段科研项目经验，提升申请竞争力</p>
-                    </div>
-                  )}
-                  {experiences.length < 5 && (
-                    <div className="bg-gray-50 p-4 rounded-lg border-l-4 border-blue-500">
-                      <h4 className="font-medium">丰富经历内容</h4>
-                      <p className="text-sm text-gray-600 mt-1">建议补充学生工作或奖项，提升简历丰富度</p>
-                    </div>
-                  )}
-                  {sortedTags.length < 5 && (
-                    <div className="bg-gray-50 p-4 rounded-lg border-l-4 border-blue-500">
-                      <h4 className="font-medium">完善技能标签</h4>
-                      <p className="text-sm text-gray-600 mt-1">为经历添加更多技能标签，有助于智能匹配</p>
-                    </div>
-                  )}
-                  {sortedTags.length >= 5 && stats.research >= 2 && experiences.length >= 5 && (
-                    <div className="text-gray-500 text-center py-4">各项指标良好！</div>
-                  )}
-                </div>
-              </div>
-
-              {/* 岗位推荐 */}
-              <div className="bg-white rounded-lg p-6 shadow-sm">
-                <h3 className="text-lg font-semibold mb-4">🎯 适合岗位推荐</h3>
-                <div className="space-y-3">
-                  {sortedTags.some(([t]) => t.includes('Python') || t.includes('机器学习')) && (
-                    <div className="bg-gray-50 p-4 rounded-lg cursor-pointer hover:bg-gray-100" onClick={() => { setTargetJob('算法工程师'); setActiveTab('create'); }}>
-                      <div className="flex justify-between items-center">
-                        <h4 className="font-medium">算法工程师</h4>
-                        <span className="text-green-600 font-medium">90%</span>
-                      </div>
-                    </div>
-                  )}
-                  {sortedTags.some(([t]) => t.includes('Java') || t.includes('开发')) && (
-                    <div className="bg-gray-50 p-4 rounded-lg cursor-pointer hover:bg-gray-100" onClick={() => { setTargetJob('Java开发工程师'); setActiveTab('create'); }}>
-                      <div className="flex justify-between items-center">
-                        <h4 className="font-medium">Java开发工程师</h4>
-                        <span className="text-green-600 font-medium">85%</span>
-                      </div>
-                    </div>
-                  )}
-                  {sortedTags.some(([t]) => t.includes('数据分析') || t.includes('统计')) && (
-                    <div className="bg-gray-50 p-4 rounded-lg cursor-pointer hover:bg-gray-100" onClick={() => { setTargetJob('数据分析师'); setActiveTab('create'); }}>
-                      <div className="flex justify-between items-center">
-                        <h4 className="font-medium">数据分析师</h4>
-                        <span className="text-green-600 font-medium">80%</span>
-                      </div>
-                    </div>
-                  )}
-                  {sortedTags.length === 0 && (
-                    <div className="text-gray-500 text-center py-4">添加经历后自动推荐</div>
-                  )}
-                </div>
-              </div>
+            <div className="flex-1">
+              <h3 className="font-semibold text-on-surface">Analyze Job</h3>
+              <p className="text-sm text-on-surface-variant">Check fit for any job description</p>
             </div>
-          </div>
-        )}
+            <ChevronRight className="w-5 h-5 text-outline" />
+          </button>
 
-        {/* 个人资料页面 */}
-        {activeTab === 'profile' && (
-          <div className="bg-white rounded-lg p-6 shadow-sm">
-            <h2 className="text-xl font-semibold mb-6">基本信息</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">姓名</label>
-                <input
-                  type="text"
-                  value={formData.name}
-                  onChange={e => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="请输入姓名"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">出生年月</label>
-                <input
-                  type="text"
-                  value={formData.birth}
-                  onChange={e => setFormData({ ...formData, birth: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="如: 2001.11"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">民族</label>
-                <input
-                  type="text"
-                  value={formData.nation}
-                  onChange={e => setFormData({ ...formData, nation: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="如: 汉族"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">政治面貌</label>
-                <input
-                  type="text"
-                  value={formData.political}
-                  onChange={e => setFormData({ ...formData, political: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="如: 共青团员"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">籍贯</label>
-                <input
-                  type="text"
-                  value={formData.origin}
-                  onChange={e => setFormData({ ...formData, origin: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="如: 福建省龙岩市"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">邮箱</label>
-                <input
-                  type="email"
-                  value={formData.email}
-                  onChange={e => setFormData({ ...formData, email: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="your@email.com"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">电话</label>
-                <input
-                  type="tel"
-                  value={formData.phone}
-                  onChange={e => setFormData({ ...formData, phone: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="手机号"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">目标岗位</label>
-                <input
-                  type="text"
-                  value={formData.targetJobs}
-                  onChange={e => setFormData({ ...formData, targetJobs: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="如: Java开发工程师, 算法工程师"
-                />
-              </div>
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1">AI 提供商</label>
-                <select
-                  value={formData.aiProvider}
-                  onChange={e => setFormData({ ...formData, aiProvider: e.target.value as 'dashscope' | 'gemini' })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="dashscope">阿里云 DashScope (通义千问)</option>
-                  <option value="gemini">Google AI Studio (Gemini)</option>
-                </select>
-                <p className="text-xs text-gray-500 mt-1">选择要使用的 AI 服务提供商</p>
-              </div>
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  {formData.aiProvider === 'gemini' ? 'Google AI Studio API Key' : '阿里云 DashScope API Key'}
-                </label>
-                <input
-                  type="password"
-                  value={formData.aiProvider === 'gemini' ? formData.geminiApiKey : formData.apiKey}
-                  onChange={e => formData.aiProvider === 'gemini'
-                    ? setFormData({ ...formData, geminiApiKey: e.target.value })
-                    : setFormData({ ...formData, apiKey: e.target.value })
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder={formData.aiProvider === 'gemini' ? '在 Google AI Studio 获取' : 'sk-xxxxxx 在阿里云控制台获取'}
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  {formData.aiProvider === 'gemini'
-                    ? '用于调用 Gemini 模型，在 Google AI Studio 获取免费 API Key'
-                    : '用于调用通义千问模型，在阿里云控制台获取'}
-                </p>
-              </div>
+          <button
+            onClick={() => setActiveTab('profile')}
+            className="w-full card flex items-center gap-4 hover:bg-surface-container-low transition-colors"
+          >
+            <div className="w-10 h-10 bg-secondary-container rounded-full flex items-center justify-center">
+              <Edit2 className="w-5 h-5 text-white" />
             </div>
+            <div className="flex-1">
+              <h3 className="font-semibold text-on-surface">Quick Edit</h3>
+              <p className="text-sm text-on-surface-variant">Update primary contact info</p>
+            </div>
+            <ChevronRight className="w-5 h-5 text-outline" />
+          </button>
+        </div>
+      </div>
+
+      {/* Upgrade Banner */}
+      <div className="bg-primary rounded-2xl p-6 text-white relative overflow-hidden">
+        <div className="relative z-10">
+          <h3 className="font-headline font-bold text-lg mb-2">Upgrade to Lumina Pro</h3>
+          <p className="text-white/80 text-sm mb-4">Unlock unlimited AI tailoring and priority job matching.</p>
+          <button className="bg-white text-primary px-6 py-2 rounded-full font-medium text-sm">
+            Get Started
+          </button>
+        </div>
+        <Sparkles className="absolute -right-4 -bottom-4 w-32 h-32 text-white/10" />
+      </div>
+    </div>
+  );
+
+  // 经历管理页面
+  const ExperienceView = () => {
+    const [filter, setFilter] = useState('all');
+    const [searchQuery, setSearchQuery] = useState('');
+    const filteredExps = experiences.filter(exp => {
+      if (filter !== 'all' && exp.type !== filter) return false;
+      if (searchQuery && !exp.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+      return true;
+    });
+
+    return (
+      <div className="space-y-4 fade-in">
+        {/* Header */}
+        <div className="text-center py-2">
+          <h1 className="text-2xl font-headline font-bold text-on-surface">Experience Management</h1>
+        </div>
+
+        {/* Search */}
+        <div className="relative">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-outline" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            placeholder="Search experiences, skills, or roles..."
+            className="w-full pl-12 pr-4 py-3 bg-surface-container rounded-2xl border border-transparent focus:border-primary outline-none transition-all"
+          />
+        </div>
+
+        {/* Add Button */}
+        <button
+          onClick={() => setEditingExp({} as Experience)}
+          className="w-full py-4 bg-primary text-white rounded-2xl font-medium flex items-center justify-center gap-2 shadow-floating hover:bg-primary-container transition-colors"
+        >
+          <Plus className="w-5 h-5" />
+          Add Experience
+        </button>
+
+        {/* Filters */}
+        <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+          {[
+            { id: 'all', label: 'All' },
+            { id: 'education', label: 'Education' },
+            { id: 'research', label: 'Research' },
+            { id: 'award', label: 'Awards' },
+            { id: 'work', label: 'Work' },
+          ].map(f => (
             <button
-              onClick={handleSaveProfile}
-              className="mt-6 px-6 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors"
+              key={f.id}
+              onClick={() => setFilter(f.id)}
+              className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
+                filter === f.id
+                  ? 'bg-primary text-white'
+                  : 'bg-surface-container text-on-surface-variant hover:bg-surface-container-high'
+              }`}
             >
-              保存资料
+              {f.label}
             </button>
-          </div>
-        )}
+          ))}
+        </div>
 
-        {/* 经历管理页面 */}
-        {activeTab === 'experience' && (
-          <div className="space-y-6">
-            {/* 添加经历 */}
-            <div className="bg-white rounded-lg p-6 shadow-sm">
-              <h2 className="text-xl font-semibold mb-4">添加新经历</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">类型</label>
-                  <select
-                    value={expForm.type}
-                    onChange={e => setExpForm({ ...expForm, type: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="education">教育背景</option>
-                    <option value="research">科研经历</option>
-                    <option value="award">荣誉奖项</option>
-                    <option value="work">学生工作</option>
-                    <option value="other">其他</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">标题</label>
-                  <input
-                    type="text"
-                    value={expForm.title}
-                    onChange={e => setExpForm({ ...expForm, title: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="如: 西北农林科技大学-环境科学"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">时间</label>
-                  <input
-                    type="text"
-                    value={expForm.time}
-                    onChange={e => setExpForm({ ...expForm, time: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="如: 2020.09 - 2024.06"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">角色/职位</label>
-                  <input
-                    type="text"
-                    value={expForm.role}
-                    onChange={e => setExpForm({ ...expForm, role: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="如: 项目负责人"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">技能标签</label>
-                  <input
-                    type="text"
-                    value={expForm.tags}
-                    onChange={e => setExpForm({ ...expForm, tags: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="如: Python, 数据分析"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">详细描述</label>
-                  <textarea
-                    value={expForm.desc}
-                    onChange={e => setExpForm({ ...expForm, desc: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    rows={3}
-                    placeholder="输入详细内容"
-                  />
-                </div>
+        {/* Experience List */}
+        <div className="space-y-4">
+          {filteredExps.length === 0 ? (
+            <div className="card text-center py-12">
+              <div className="w-16 h-16 bg-surface-container rounded-full flex items-center justify-center mx-auto mb-4">
+                <Briefcase className="w-8 h-8 text-outline" />
               </div>
+              <h3 className="font-semibold text-on-surface mb-2">No experiences yet</h3>
+              <p className="text-sm text-on-surface-variant mb-4">Add your first experience to get started</p>
               <button
-                onClick={handleAddExperience}
-                className="mt-4 px-6 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors"
+                onClick={() => setEditingExp({} as Experience)}
+                className="px-6 py-2 bg-primary text-white rounded-full font-medium"
               >
-                添加经历
+                Add Now
               </button>
             </div>
-
-            {/* 智能导入 */}
-            <div className="bg-blue-50 border-2 border-dashed border-blue-300 rounded-lg p-6">
-              <h2 className="text-lg font-semibold mb-2">🤖 智能导入经历</h2>
-              <p className="text-sm text-gray-600 mb-4">上传简历文件或粘贴文本，系统自动提取经历</p>
-
-              {/* 文件上传区域 */}
-              <div className="mb-4">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".txt,.pdf,.md"
-                  onChange={handleFileUpload}
-                  className="hidden"
-                  id="file-upload"
-                />
-                <label
-                  htmlFor="file-upload"
-                  className={`inline-flex items-center gap-2 px-4 py-2 border border-blue-300 rounded-md cursor-pointer hover:bg-blue-100 transition-colors ${
-                    isExtracting ? 'opacity-50 cursor-wait' : ''
-                  }`}
-                >
-                  <FileUp className="w-4 h-4" />
-                  {isExtracting ? '正在解析文件...' : uploadedFile ? uploadedFile.name : '上传简历文件 (.txt, .pdf, .md)'}
-                </label>
-                {uploadedFile && (
-                  <button
-                    onClick={() => { setUploadedFile(null); setImportText(''); }}
-                    className="ml-2 text-red-500 hover:text-red-700"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-
-              <textarea
-                value={importText}
-                onChange={e => setImportText(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
-                rows={6}
-                placeholder="或者粘贴简历文本..."
-              />
-              <div className="flex gap-3">
-                <button
-                  onClick={handleLLMImport}
-                  disabled={isLoading || isExtracting}
-                  className="px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 transition-colors disabled:opacity-50"
-                >
-                  {isLoading ? '🤖 AI分析中...' : isExtracting ? '📄 解析中...' : '✨ AI智能提取'}
-                </button>
-              </div>
-            </div>
-
-            {/* 经历列表 */}
-            <div className="bg-white rounded-lg p-6 shadow-sm">
-              <h2 className="text-xl font-semibold mb-4">已添加的经历</h2>
-              <div className="flex gap-2 mb-4 flex-wrap">
-                {['all', 'education', 'research', 'award', 'work'].map(type => (
-                  <button
-                    key={type}
-                    onClick={() => setExpFilter(type)}
-                    className={`px-4 py-1.5 rounded-md text-sm ${
-                      expFilter === type
-                        ? 'bg-blue-500 text-white'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                  >
-                    {type === 'all' ? '全部' : typeNames[type]}
-                  </button>
-                ))}
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="bg-gray-50">
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">类型</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">标题</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">时间</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">技能标签</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">操作</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredExp.map(exp => (
-                      <tr key={exp.id} className="border-t border-gray-100 hover:bg-gray-50">
-                        <td className="px-4 py-3">
-                          <span className="px-2 py-1 bg-gray-100 rounded text-xs">{typeNames[exp.type]}</span>
-                        </td>
-                        <td className="px-4 py-3 text-sm">{exp.title}</td>
-                        <td className="px-4 py-3 text-sm text-gray-600">{exp.time || '-'}</td>
-                        <td className="px-4 py-3">
-                          <div className="flex flex-wrap gap-1">
-                            {exp.tags.map((tag, i) => (
-                              <span key={i} className="px-2 py-0.5 bg-blue-50 text-blue-600 rounded text-xs">{tag}</span>
-                            ))}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3">
-                          <button
-                            onClick={() => handleDeleteExp(exp.id)}
-                            className="text-red-500 hover:text-red-700"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {filteredExp.length === 0 && (
-                  <div className="text-center py-8 text-gray-500">暂无经历</div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* 智能生成页面 */}
-        {activeTab === 'create' && (
-          <div className="space-y-6">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* 输入岗位 + 简历优化 */}
-              <div className="space-y-4">
-                {/* 简历诊断与优化 */}
-                <div className="bg-gradient-to-r from-purple-500 to-pink-500 rounded-lg p-6 text-white">
-                  <h2 className="text-lg font-semibold mb-4">💡 简历诊断与优化</h2>
-                  <div className="grid grid-cols-2 gap-3">
-                    <button
-                      onClick={handleDiagnoseResume}
-                      disabled={isLoading}
-                      className="flex items-center justify-center gap-2 px-4 py-3 bg-white/20 rounded-lg hover:bg-white/30 transition-colors disabled:opacity-50"
-                    >
-                      <Lightbulb className="w-5 h-5" />
-                      <span>AI诊断</span>
-                    </button>
-                    <button
-                      onClick={handleRewriteResume}
-                      disabled={isLoading}
-                      className="flex items-center justify-center gap-2 px-4 py-3 bg-white/20 rounded-lg hover:bg-white/30 transition-colors disabled:opacity-50"
-                    >
-                      <Wand2 className="w-5 h-5" />
-                      <span>AI改写</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* 诊断结果展示 */}
-                {diagnoseResult && (
-                  <div className="bg-white rounded-lg p-6 shadow-sm">
-                    <div className="flex justify-between items-center mb-4">
-                      <h2 className="text-lg font-semibold">📊 诊断结果</h2>
-                      <button onClick={() => setDiagnoseResult(null)} className="text-gray-400 hover:text-gray-600">
-                        <X className="w-5 h-5" />
-                      </button>
-                    </div>
-
-                    {/* 评分 */}
-                    {diagnoseResult.scores && (
-                      <div className="grid grid-cols-4 gap-2 mb-4">
-                        {Object.entries(diagnoseResult.scores).map(([key, value]: [string, any]) => (
-                          <div key={key} className="text-center p-2 bg-gray-50 rounded">
-                            <div className="text-2xl font-bold text-blue-600">{value}</div>
-                            <div className="text-xs text-gray-500">{key === 'content' ? '内容' : key === 'format' ? '格式' : key === 'relevance' ? '针对性' : '综合'}</div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {diagnoseResult.overall && (
-                      <div className="mb-4 p-3 bg-blue-50 rounded-lg">
-                        <p className="text-sm">{diagnoseResult.overall}</p>
-                      </div>
-                    )}
-
-                    {diagnoseResult.issues && diagnoseResult.issues.length > 0 && (
-                      <div className="space-y-2">
-                        {diagnoseResult.issues.map((issue: any, idx: number) => (
-                          <div key={idx} className="p-3 bg-yellow-50 border-l-4 border-yellow-400 rounded">
-                            <div className="font-medium text-sm">{issue.type}</div>
-                            <div className="text-sm text-gray-600">{issue.description}</div>
-                            <div className="text-sm text-green-600 mt-1">💡 {issue.suggestion}</div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* 改写结果展示 */}
-                {rewriteResult && (
-                  <div className="bg-white rounded-lg p-6 shadow-sm">
-                    <div className="flex justify-between items-center mb-4">
-                      <h2 className="text-lg font-semibold">✨ AI改写结果</h2>
-                      <div className="flex gap-2">
-                        <button onClick={applyRewrite} className="px-3 py-1 bg-green-500 text-white rounded text-sm">
-                          应用改写
-                        </button>
-                        <button onClick={() => setRewriteResult(null)} className="text-gray-400 hover:text-gray-600">
-                          <X className="w-5 h-5" />
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="space-y-4 max-h-96 overflow-y-auto">
-                      {rewriteResult.sections?.map((section: any, idx: number) => (
-                        <div key={idx} className="p-3 bg-gray-50 rounded-lg">
-                          <div className="font-medium text-sm mb-2">{typeNames[section.type] || section.type}</div>
-                          {section.items?.map((item: any, i: number) => (
-                            <div key={i} className="mb-2 pb-2 border-b last:border-0">
-                              <div className="font-medium">{item.title}</div>
-                              {item.role && <div className="text-sm text-gray-600">{item.role}</div>}
-                              {item.desc && <div className="text-sm text-gray-500 mt-1">{item.desc}</div>}
-                            </div>
+          ) : (
+            filteredExps.map(exp => {
+              const colors = typeColors[exp.type];
+              return (
+                <div key={exp.id} className="card card-hover">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1 min-w-0">
+                      <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${colors.bg} ${colors.text} mb-2`}>
+                        {typeNames[exp.type].toUpperCase()}
+                      </span>
+                      <h3 className="font-semibold text-on-surface text-lg">{exp.title}</h3>
+                      {exp.role && (
+                        <p className="text-sm text-on-surface-variant">{exp.role}</p>
+                      )}
+                      {exp.time && (
+                        <p className="text-xs text-outline mt-1">{exp.time}</p>
+                      )}
+                      {exp.desc && (
+                        <p className="text-sm text-on-surface-variant mt-2 line-clamp-2">{exp.desc}</p>
+                      )}
+                      {exp.tags.length > 0 && (
+                        <div className="flex flex-wrap gap-2 mt-3">
+                          {exp.tags.slice(0, 3).map((tag, i) => (
+                            <span key={i} className="px-2 py-1 bg-primary-fixed rounded-full text-xs text-on-surface">
+                              {tag}
+                            </span>
                           ))}
                         </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* 输入岗位 */}
-                <div className="bg-white rounded-lg p-6 shadow-sm">
-                  <h2 className="text-lg font-semibold mb-4">🎯 输入目标岗位</h2>
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">目标岗位JD</label>
-                      <textarea
-                        value={jobDesc}
-                        onChange={e => setJobDesc(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        rows={4}
-                        placeholder="粘贴岗位描述..."
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">或输入岗位名称</label>
-                      <input
-                        type="text"
-                        value={targetJob}
-                        onChange={e => setTargetJob(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="如: 算法工程师"
-                      />
+                      )}
                     </div>
                     <div className="flex gap-2">
                       <button
-                        onClick={handleAnalyzeJob}
-                        className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors"
+                        onClick={() => setEditingExp(exp)}
+                        className="w-8 h-8 bg-surface-container rounded-full flex items-center justify-center hover:bg-surface-container-high transition-colors"
                       >
-                        🔍 智能分析岗位
+                        <Edit2 className="w-4 h-4 text-on-surface-variant" />
                       </button>
                       <button
-                        onClick={handleAIAnalyzeJob}
-                        disabled={isLoading}
-                        className="px-4 py-2 bg-purple-500 text-white rounded-md hover:bg-purple-600 transition-colors disabled:opacity-50"
+                        onClick={() => handleDeleteExp(exp.id)}
+                        className="w-8 h-8 bg-red-50 rounded-full flex items-center justify-center hover:bg-red-100 transition-colors"
                       >
-                        {isLoading ? '🤖 AI分析中...' : '🤖 AI深度分析'}
+                        <Trash2 className="w-4 h-4 text-red-500" />
                       </button>
                     </div>
                   </div>
                 </div>
+              );
+            })
+          )}
+        </div>
 
-                {/* AI JD分析结果 */}
-                {aiJobAnalysis && (
-                  <div className="bg-white rounded-lg p-6 shadow-sm">
-                    <div className="flex justify-between items-center mb-4">
-                      <h2 className="text-lg font-semibold">📋 AI深度分析</h2>
-                      <button onClick={() => setAiJobAnalysis(null)} className="text-gray-400 hover:text-gray-600">
-                        <X className="w-5 h-5" />
-                      </button>
-                    </div>
+        {/* FAB for Add */}
+        <button
+          onClick={() => setEditingExp({} as Experience)}
+          className="fixed bottom-24 right-4 w-14 h-14 bg-primary text-white rounded-full flex items-center justify-center shadow-floating hover:bg-primary-container transition-colors z-40"
+        >
+          <Plus className="w-6 h-6" />
+        </button>
+      </div>
+    );
+  };
 
-                    <div className="space-y-4">
-                      {aiJobAnalysis.requiredSkills && (
-                        <div>
-                          <div className="text-sm font-medium mb-1">必备技能：</div>
-                          <div className="flex flex-wrap gap-1">
-                            {aiJobAnalysis.requiredSkills.map((s: string, i: number) => (
-                              <span key={i} className="px-2 py-0.5 bg-red-50 border border-red-200 text-red-600 rounded text-xs">{s}</span>
-                            ))}
-                          </div>
-                        </div>
-                      )}
+  // 编辑经历弹窗
+  const ExperienceModal = () => {
+    if (!editingExp) return null;
+    const isNew = !editingExp.id;
 
-                      {aiJobAnalysis.preferredSkills && (
-                        <div>
-                          <div className="text-sm font-medium mb-1">加分技能：</div>
-                          <div className="flex flex-wrap gap-1">
-                            {aiJobAnalysis.preferredSkills.map((s: string, i: number) => (
-                              <span key={i} className="px-2 py-0.5 bg-green-50 border border-green-200 text-green-600 rounded text-xs">{s}</span>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {aiJobAnalysis.coreRequirements && (
-                        <div>
-                          <div className="text-sm font-medium mb-1">核心要求：</div>
-                          <ul className="text-sm text-gray-600 space-y-1">
-                            {aiJobAnalysis.coreRequirements.map((r: string, i: number) => (
-                              <li key={i}>• {r}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-
-                      {aiJobAnalysis.analysis && (
-                        <div className="p-3 bg-blue-50 rounded-lg">
-                          <div className="text-sm font-medium mb-1">综合分析：</div>
-                          <p className="text-sm text-gray-600">{aiJobAnalysis.analysis}</p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* 简单JD分析结果 */}
-                {jobAnalysis.keywords.length > 0 && !aiJobAnalysis && (
-                  <div className="bg-white rounded-lg p-6 shadow-sm">
-                    <h2 className="text-lg font-semibold mb-4">📋 JD智能分析</h2>
-                    <div className="bg-gray-50 p-4 rounded-lg">
-                      <div className="mb-2">
-                        <span className="text-sm font-medium">关键词：</span>
-                        <div className="flex flex-wrap gap-1 mt-1">
-                          {jobAnalysis.keywords.slice(0, 10).map((kw, i) => (
-                            <span key={i} className="px-2 py-0.5 bg-green-50 border border-green-200 text-green-600 rounded text-xs">{kw}</span>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* 智能匹配 */}
-              <div className="bg-white rounded-lg p-6 shadow-sm">
-                <h2 className="text-lg font-semibold mb-2">⚡ 智能匹配排序</h2>
-                <p className="text-sm text-gray-500 mb-4">系统根据岗位需求自动排序</p>
-
-                {/* 匹配度进度条 */}
-                <div className="mb-4">
-                  <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-gradient-to-r from-red-500 via-yellow-500 to-green-500 transition-all duration-500"
-                      style={{ width: `${avgScore}%` }}
-                    />
-                  </div>
-                  <div className="text-center mt-2">
-                    匹配度: <span className="font-bold text-green-600">{avgScore}%</span>
-                  </div>
-                </div>
-
-                {/* 经历列表 */}
-                <div className="max-h-80 overflow-y-auto space-y-2">
-                  {scoredExps.map((exp, i) => (
-                    <div key={exp.id} className="flex items-center gap-3 p-3 border rounded-lg hover:bg-gray-50">
-                      <input
-                        type="checkbox"
-                        className="exp-select w-4 h-4"
-                        defaultChecked={exp.type === 'education' || exp.score >= 40}
-                        value={exp.id}
-                      />
-                      <div className={`w-7 h-7 rounded-full flex items-center justify-center text-white text-sm font-medium ${i < 3 ? 'bg-yellow-500' : 'bg-blue-500'}`}>
-                        {i + 1}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="font-medium text-sm truncate">{exp.title}</div>
-                        <div className="text-xs text-gray-500">{typeNames[exp.type]} · {exp.score >= 60 ? '高度匹配' : exp.score >= 30 ? '相关' : '基础'}</div>
-                      </div>
-                      <div className="text-green-600 font-medium text-sm">{exp.score}分</div>
-                    </div>
-                  ))}
-                  {scoredExps.length === 0 && (
-                    <div className="text-center py-8 text-gray-500">请先添加经历</div>
-                  )}
-                </div>
-              </div>
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+        <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-hidden">
+          <div className="p-4 border-b border-outline-variant flex items-center justify-between">
+            <h2 className="text-lg font-headline font-bold text-on-surface">
+              {isNew ? 'Add Experience' : 'Edit Experience'}
+            </h2>
+            <button onClick={() => setEditingExp(null)} className="w-8 h-8 flex items-center justify-center">
+              <X className="w-5 h-5 text-on-surface-variant" />
+            </button>
+          </div>
+          <div className="p-4 space-y-4 overflow-y-auto max-h-[60vh]">
+            <div>
+              <label className="text-sm text-on-surface-variant mb-1 block">Type</label>
+              <select
+                value={expForm.type}
+                onChange={e => setExpForm({ ...expForm, type: e.target.value })}
+                className="w-full px-4 py-3 bg-surface-container rounded-xl border border-transparent focus:border-primary outline-none"
+              >
+                <option value="education">Education</option>
+                <option value="research">Research</option>
+                <option value="award">Awards</option>
+                <option value="work">Work</option>
+                <option value="other">Other</option>
+              </select>
             </div>
-
-            {/* 生成简历 */}
-            <div className="bg-white rounded-lg p-6 shadow-sm">
-              <h2 className="text-lg font-semibold mb-4">📝 生成简历</h2>
-              <div className="flex items-center gap-4 mb-4">
-                <div className="flex-1">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">简历标题</label>
-                  <input
-                    type="text"
-                    value={resumeTitle}
-                    onChange={e => setResumeTitle(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="如: 求职XX公司算法工程师"
-                  />
-                </div>
-              </div>
-              <div className="flex gap-3">
-                <button
-                  onClick={handleGenerateResume}
-                  className="px-6 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors"
-                >
-                  🚀 一键智能生成（规则）
-                </button>
-                <button
-                  onClick={handleLLMGenerate}
-                  disabled={isLoading}
-                  className="px-6 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 transition-colors disabled:opacity-50"
-                >
-                  {isLoading ? '🤖 AI生成中...' : '✨ AI智能生成（推荐）'}
-                </button>
-              </div>
+            <div>
+              <label className="text-sm text-on-surface-variant mb-1 block">Title</label>
+              <input
+                type="text"
+                value={expForm.title}
+                onChange={e => setExpForm({ ...expForm, title: e.target.value })}
+                placeholder="e.g. Senior Product Designer"
+                className="w-full px-4 py-3 bg-surface-container rounded-xl border border-transparent focus:border-primary outline-none"
+              />
+            </div>
+            <div>
+              <label className="text-sm text-on-surface-variant mb-1 block">Time Period</label>
+              <input
+                type="text"
+                value={expForm.time}
+                onChange={e => setExpForm({ ...expForm, time: e.target.value })}
+                placeholder="e.g. 2021 - Present"
+                className="w-full px-4 py-3 bg-surface-container rounded-xl border border-transparent focus:border-primary outline-none"
+              />
+            </div>
+            <div>
+              <label className="text-sm text-on-surface-variant mb-1 block">Role / Organization</label>
+              <input
+                type="text"
+                value={expForm.role}
+                onChange={e => setExpForm({ ...expForm, role: e.target.value })}
+                placeholder="e.g. Google"
+                className="w-full px-4 py-3 bg-surface-container rounded-xl border border-transparent focus:border-primary outline-none"
+              />
+            </div>
+            <div>
+              <label className="text-sm text-on-surface-variant mb-1 block">Description</label>
+              <textarea
+                value={expForm.desc}
+                onChange={e => setExpForm({ ...expForm, desc: e.target.value })}
+                placeholder="Describe your experience..."
+                rows={4}
+                className="w-full px-4 py-3 bg-surface-container rounded-xl border border-transparent focus:border-primary outline-none resize-none"
+              />
+            </div>
+            <div>
+              <label className="text-sm text-on-surface-variant mb-1 block">Skills (comma separated)</label>
+              <input
+                type="text"
+                value={expForm.tags}
+                onChange={e => setExpForm({ ...expForm, tags: e.target.value })}
+                placeholder="e.g. Figma, Design Systems, Leadership"
+                className="w-full px-4 py-3 bg-surface-container rounded-xl border border-transparent focus:border-primary outline-none"
+              />
             </div>
           </div>
-        )}
+          <div className="p-4 border-t border-outline-variant flex gap-3">
+            <button
+              onClick={() => setEditingExp(null)}
+              className="flex-1 py-3 bg-surface-container text-on-surface rounded-full font-medium"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleAddExperience}
+              className="flex-1 py-3 bg-primary text-white rounded-full font-medium"
+            >
+              Save
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
-        {/* 我的简历页面 */}
-        {activeTab === 'resumes' && (
-          <div className="bg-white rounded-lg p-6 shadow-sm">
-            <h2 className="text-xl font-semibold mb-6">我的简历</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {resumes.map(r => (
+  // 匹配/创建简历页面
+  const MatchView = () => (
+    <div className="space-y-4 fade-in">
+      {/* Header */}
+      <div className="text-center py-2">
+        <h1 className="text-2xl font-headline font-bold text-on-surface">Find your <span className="text-primary">perfect</span></h1>
+        <p className="text-2xl font-headline font-bold text-on-surface">career orbit.</p>
+        <p className="text-on-surface-variant mt-2 text-sm">AI-driven matching for the next generation of digital pioneers.</p>
+      </div>
+
+      {/* Job Match Card */}
+      <div className="bg-primary rounded-2xl p-6 text-white relative overflow-hidden">
+        <div className="relative z-10">
+          <span className="inline-block px-3 py-1 bg-white/20 rounded-full text-xs font-medium mb-3">NEW MATCH</span>
+          <h3 className="text-2xl font-headline font-bold mb-1">Product Designer</h3>
+          <p className="text-white/80 mb-4">Meta Labs • Remote</p>
+          <button
+            onClick={() => setTargetJob('Product Designer')}
+            className="px-4 py-2 bg-white text-primary rounded-full font-medium text-sm"
+          >
+            View Role
+          </button>
+        </div>
+        <Sparkles className="absolute right-4 top-1/2 -translate-y-1/2 w-24 h-24 text-white/10" />
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 gap-4">
+        <div className="card text-center py-4">
+          <div className="w-10 h-10 bg-primary-container rounded-full flex items-center justify-center mx-auto mb-2">
+            <Briefcase className="w-5 h-5 text-white" />
+          </div>
+          <div className="text-2xl font-headline font-bold text-on-surface">{experiences.length}</div>
+          <div className="text-xs text-on-surface-variant uppercase tracking-wide">Experiences</div>
+        </div>
+        <div className="card text-center py-4">
+          <div className="w-10 h-10 bg-secondary-container rounded-full flex items-center justify-center mx-auto mb-2">
+            <Sparkles className="w-5 h-5 text-white" />
+          </div>
+          <div className="text-2xl font-headline font-bold text-on-surface">85%</div>
+          <div className="text-xs text-on-surface-variant uppercase tracking-wide">Profile Power</div>
+          <div className="w-full h-1 bg-surface-container rounded-full mt-2">
+            <div className="h-full w-[85%] bg-primary rounded-full" />
+          </div>
+        </div>
+      </div>
+
+      {/* Resume Creation */}
+      <div className="card">
+        <h3 className="font-headline font-bold text-lg text-on-surface mb-4">Create Resume</h3>
+
+        {/* Step 1: Select Experiences */}
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-sm font-medium text-on-surface">Step 1: Select Experiences</span>
+            <span className="text-xs text-primary font-medium">{selectedExps.length} selected</span>
+          </div>
+          <div className="space-y-2 max-h-48 overflow-y-auto">
+            {experiences.map(exp => {
+              const isSelected = selectedExps.includes(exp.id);
+              return (
                 <div
-                  key={r.id}
-                  className="border rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer"
-                  onClick={() => setPreviewResume(r)}
+                  key={exp.id}
+                  onClick={() => {
+                    if (isSelected) {
+                      setSelectedExps(selectedExps.filter(id => id !== exp.id));
+                    } else {
+                      setSelectedExps([...selectedExps, exp.id]);
+                    }
+                  }}
+                  className={`p-3 rounded-xl border-2 cursor-pointer transition-all ${
+                    isSelected
+                      ? 'border-primary bg-primary-fixed'
+                      : 'border-transparent bg-surface-container'
+                  }`}
                 >
-                  <div className="flex justify-between items-start mb-2">
-                    <h3 className="font-medium">{r.title}</h3>
-                    <span className="px-2 py-0.5 bg-green-100 text-green-600 rounded text-xs">{r.match}%</span>
-                  </div>
-                  <div className="text-sm text-gray-500 mb-2">{r.date} · {r.job || '通用'}</div>
-                  <div className="flex gap-2">
-                    <span className="px-2 py-0.5 bg-gray-100 rounded text-xs">{r.type === 'high' ? '高匹配' : '普通'}</span>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleDeleteResume(r.id); }}
-                      className="text-red-500 hover:text-red-700 ml-auto"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                  <div className="flex items-center gap-3">
+                    <div className={`w-5 h-5 rounded-full flex items-center justify-center ${
+                      isSelected ? 'bg-primary text-white' : 'bg-white border-2 border-outline'
+                    }`}>
+                      {isSelected && <Check className="w-3 h-3" />}
+                    </div>
+                    <div className="flex-1">
+                      <div className="font-medium text-on-surface text-sm">{exp.title}</div>
+                      <div className="text-xs text-on-surface-variant">{exp.time}</div>
+                    </div>
                   </div>
                 </div>
-              ))}
-              {resumes.length === 0 && (
-                <div className="col-span-full text-center py-12 text-gray-500">暂无简历</div>
-              )}
-            </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Target Job */}
+        <div className="mb-4">
+          <label className="text-sm text-on-surface-variant mb-1 block">Target Job Title</label>
+          <input
+            type="text"
+            value={targetJob}
+            onChange={e => setTargetJob(e.target.value)}
+            placeholder="e.g. Product Designer"
+            className="w-full px-4 py-3 bg-surface-container rounded-xl border border-transparent focus:border-primary outline-none"
+          />
+        </div>
+
+        {/* Job Description */}
+        <div className="mb-4">
+          <label className="text-sm text-on-surface-variant mb-1 block">Job Description (Optional)</label>
+          <textarea
+            value={jobDesc}
+            onChange={e => setJobDesc(e.target.value)}
+            placeholder="Paste job requirements here to allow AI to tailor your resume..."
+            rows={4}
+            className="w-full px-4 py-3 bg-surface-container rounded-xl border border-transparent focus:border-primary outline-none resize-none"
+          />
+          <div className="text-right text-xs text-outline mt-1">{jobDesc.length} / 2000</div>
+        </div>
+
+        {/* AI Analyze Button */}
+        <button
+          onClick={handleAIAnalyzeJob}
+          disabled={isLoading || !jobDesc.trim()}
+          className="w-full py-3 bg-surface-container text-on-surface rounded-xl font-medium flex items-center justify-center gap-2 mb-3 disabled:opacity-50"
+        >
+          <Wand2 className="w-5 h-5" />
+          AI Analyze Job
+        </button>
+
+        {/* Analysis Results */}
+        {aiJobAnalysis && (
+          <div className="bg-primary-fixed rounded-xl p-4 mb-4">
+            <h4 className="font-semibold text-on-surface mb-2">Analysis Results</h4>
+            <div className="text-sm text-on-surface-variant mb-2">{aiJobAnalysis.title}</div>
+            {aiJobAnalysis.requiredSkills && (
+              <div className="flex flex-wrap gap-2">
+                {aiJobAnalysis.requiredSkills.slice(0, 5).map((skill: string, i: number) => (
+                  <span key={i} className="px-2 py-1 bg-primary text-white rounded-full text-xs">
+                    {skill}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         )}
+
+        {/* Generate Button */}
+        <button
+          onClick={handleGenerateResume}
+          disabled={isLoading || selectedExps.length === 0}
+          className="w-full py-4 bg-primary text-white rounded-2xl font-medium flex items-center justify-center gap-2 shadow-floating disabled:opacity-50"
+        >
+          {isLoading ? (
+            <RefreshCw className="w-5 h-5 animate-spin" />
+          ) : (
+            <Sparkles className="w-5 h-5" />
+          )}
+          {isLoading ? 'Generating...' : 'Generate Resume'}
+          <ChevronRight className="w-5 h-5" />
+        </button>
+      </div>
+    </div>
+  );
+
+  // 简历列表页面
+  const ResumesView = () => (
+    <div className="space-y-4 fade-in">
+      {/* Header */}
+      <div className="text-center py-2">
+        <h1 className="text-2xl font-headline font-bold text-on-surface">My Resumes</h1>
+        <p className="text-on-surface-variant mt-2">{resumes.length} resumes saved</p>
+      </div>
+
+      {/* Resume List */}
+      <div className="space-y-4">
+        {resumes.length === 0 ? (
+          <div className="card text-center py-12">
+            <div className="w-16 h-16 bg-surface-container rounded-full flex items-center justify-center mx-auto mb-4">
+              <FileText className="w-8 h-8 text-outline" />
+            </div>
+            <h3 className="font-semibold text-on-surface mb-2">No resumes yet</h3>
+            <p className="text-sm text-on-surface-variant mb-4">Create your first resume with AI</p>
+            <button
+              onClick={() => setActiveTab('match')}
+              className="px-6 py-2 bg-primary text-white rounded-full font-medium"
+            >
+              Create Resume
+            </button>
+          </div>
+        ) : (
+          resumes.map(resume => (
+            <div key={resume.id} className="card card-hover">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-semibold text-on-surface text-lg">{resume.title}</h3>
+                  <p className="text-sm text-on-surface-variant">{resume.job}</p>
+                  <div className="flex items-center gap-4 mt-2">
+                    <span className="text-xs text-outline">{resume.date}</span>
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                      resume.match >= 80 ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
+                    }`}>
+                      {resume.match}% Match
+                    </span>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setPreviewResume(resume)}
+                    className="w-8 h-8 bg-surface-container rounded-full flex items-center justify-center hover:bg-surface-container-high transition-colors"
+                  >
+                    <Eye className="w-4 h-4 text-on-surface-variant" />
+                  </button>
+                  <button
+                    onClick={() => handleExportPDF(resume)}
+                    className="w-8 h-8 bg-primary-container rounded-full flex items-center justify-center hover:bg-primary transition-colors"
+                  >
+                    <Download className="w-4 h-4 text-white" />
+                  </button>
+                  <button
+                    onClick={() => handleDeleteResume(resume.id)}
+                    className="w-8 h-8 bg-red-50 rounded-full flex items-center justify-center hover:bg-red-100 transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4 text-red-500" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+
+  // 个人资料页面
+  const ProfileView = () => (
+    <div className="space-y-4 fade-in pb-8">
+      {/* Header */}
+      <div className="text-center py-2">
+        <h1 className="text-2xl font-headline font-bold text-on-surface">Account Settings</h1>
+        <p className="text-on-surface-variant mt-2 text-sm">Manage your professional identity and AI integration preferences.</p>
+      </div>
+
+      {/* Basic Information */}
+      <div className="card">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 bg-primary-container rounded-full flex items-center justify-center">
+            <User className="w-5 h-5 text-white" />
+          </div>
+          <h2 className="font-headline font-bold text-lg text-primary">Basic Information</h2>
+        </div>
+        <div className="space-y-4">
+          {[
+            { label: 'Full Name', key: 'name', type: 'text' },
+            { label: 'Birth Date', key: 'birth', type: 'text' },
+            { label: 'Nationality', key: 'nation', type: 'text' },
+            { label: 'Political Status', key: 'political', type: 'text' },
+            { label: 'Place of Origin', key: 'origin', type: 'text' },
+            { label: 'Email Address', key: 'email', type: 'email' },
+            { label: 'Phone Number', key: 'phone', type: 'tel' },
+          ].map(field => (
+            <div key={field.key}>
+              <label className="text-sm text-on-surface-variant mb-1 block">{field.label}</label>
+              <input
+                type={field.type}
+                value={formData[field.key as keyof typeof formData]}
+                onChange={e => setFormData({ ...formData, [field.key]: e.target.value })}
+                className="w-full px-4 py-3 bg-surface-container rounded-xl border border-transparent focus:border-primary outline-none transition-all"
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* AI Configuration */}
+      <div className="card">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 bg-secondary-container rounded-full flex items-center justify-center">
+            <Sparkles className="w-5 h-5 text-white" />
+          </div>
+          <h2 className="font-headline font-bold text-lg text-secondary">AI Intelligence</h2>
+        </div>
+        <div className="space-y-4">
+          <div>
+            <label className="text-sm text-on-surface-variant mb-1 block">AI Provider Selection</label>
+            <select
+              value={formData.aiProvider}
+              onChange={e => setFormData({ ...formData, aiProvider: e.target.value as 'dashscope' | 'gemini' })}
+              className="w-full px-4 py-3 bg-surface-container rounded-xl border border-transparent focus:border-primary outline-none"
+            >
+              <option value="dashscope">Alibaba Cloud DashScope</option>
+              <option value="gemini">Google AI Studio</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-sm text-on-surface-variant mb-1 block">API Key</label>
+            <div className="relative">
+              <input
+                type={showApiKey ? 'text' : 'password'}
+                value={formData.aiProvider === 'gemini' ? formData.geminiApiKey : formData.apiKey}
+                onChange={e => formData.aiProvider === 'gemini'
+                  ? setFormData({ ...formData, geminiApiKey: e.target.value })
+                  : setFormData({ ...formData, apiKey: e.target.value })
+                }
+                placeholder={formData.aiProvider === 'gemini' ? 'Google AI Studio API Key' : 'DashScope API Key'}
+                className="w-full px-4 py-3 bg-surface-container rounded-xl border border-transparent focus:border-primary outline-none pr-12"
+              />
+              <button
+                onClick={() => setShowApiKey(!showApiKey)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center"
+              >
+                {showApiKey ? <EyeOff className="w-5 h-5 text-outline" /> : <Eye className="w-5 h-5 text-outline" />}
+              </button>
+            </div>
+            <p className="text-xs text-outline mt-2">
+              Your keys are encrypted locally before transmission.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Target Jobs */}
+      <div className="card">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 bg-tertiary-container rounded-full flex items-center justify-center">
+            <Briefcase className="w-5 h-5 text-white" />
+          </div>
+          <h2 className="font-headline font-bold text-lg text-tertiary">Target Jobs</h2>
+        </div>
+        <div>
+          <input
+            type="text"
+            value={formData.targetJobs}
+            onChange={e => setFormData({ ...formData, targetJobs: e.target.value })}
+            placeholder="Add more job titles..."
+            className="w-full px-4 py-3 bg-surface-container rounded-xl border border-transparent focus:border-primary outline-none"
+          />
+          <div className="flex flex-wrap gap-2 mt-3">
+            {profile.targetJobs?.map((job, i) => (
+              <span key={i} className="px-3 py-1 bg-secondary-fixed rounded-full text-sm text-on-surface flex items-center gap-1">
+                {job}
+                <button onClick={() => {
+                  const newJobs = profile.targetJobs.filter((_, idx) => idx !== i);
+                  setProfile({ ...profile, targetJobs: newJobs });
+                }}>
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Save Button */}
+      <button
+        onClick={handleSaveProfile}
+        className="w-full py-4 bg-primary text-white rounded-2xl font-medium shadow-floating hover:bg-primary-container transition-colors"
+      >
+        Save Changes
+      </button>
+    </div>
+  );
+
+  // 简历预览弹窗
+  const PreviewModal = () => {
+    if (!previewResume) return null;
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+        <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden">
+          <div className="p-4 border-b border-outline-variant flex items-center justify-between">
+            <h2 className="text-lg font-headline font-bold text-on-surface">{previewResume.title}</h2>
+            <div className="flex gap-2">
+              <button
+                onClick={() => handleExportPDF(previewResume)}
+                className="px-4 py-2 bg-primary text-white rounded-full text-sm font-medium flex items-center gap-2"
+              >
+                <Download className="w-4 h-4" />
+                Export PDF
+              </button>
+              <button onClick={() => setPreviewResume(null)} className="w-8 h-8 flex items-center justify-center">
+                <X className="w-5 h-5 text-on-surface-variant" />
+              </button>
+            </div>
+          </div>
+          <div className="p-4 overflow-y-auto max-h-[70vh]">
+            <div
+              className="resume-preview border rounded-xl"
+              dangerouslySetInnerHTML={{ __html: previewResume.content }}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // 主渲染
+  return (
+    <div className="min-h-screen bg-background pb-24">
+      {/* Top Navigation */}
+      <nav className="fixed top-0 w-full z-50 bg-white/80 backdrop-blur-xl shadow-card flex justify-between items-center px-6 py-4">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
+            <Sparkles className="w-5 h-5 text-white" />
+          </div>
+          <span className="font-headline font-bold text-xl text-primary">Lumina</span>
+        </div>
+        <div className="w-10 h-10 bg-surface-container rounded-full flex items-center justify-center overflow-hidden">
+          <User className="w-5 h-5 text-on-surface" />
+        </div>
+      </nav>
+
+      {/* Main Content */}
+      <main className="pt-20 px-4">
+        {activeTab === 'dashboard' && <DashboardView />}
+        {activeTab === 'experience' && <ExperienceView />}
+        {activeTab === 'match' && <MatchView />}
+        {activeTab === 'resumes' && <ResumesView />}
+        {activeTab === 'profile' && <ProfileView />}
       </main>
 
-      {/* 预览弹窗 */}
-      {previewResume && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setPreviewResume(null)}>
-          <div className="bg-white rounded-lg max-w-3xl w-full max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-            <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center">
-              <h3 className="text-lg font-semibold">简历预览</h3>
-              <button onClick={() => setPreviewResume(null)} className="text-gray-500 hover:text-gray-700">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="resume-preview" dangerouslySetInnerHTML={{ __html: previewResume.content }} />
-            <div className="border-t px-6 py-4 flex gap-3">
+      {/* Bottom Navigation */}
+      <nav className="fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-xl border-t border-outline-variant px-2 py-2 z-50">
+        <div className="flex justify-around items-center max-w-md mx-auto">
+          {navItems.map(item => {
+            const Icon = item.icon;
+            const isActive = activeTab === item.id;
+            return (
               <button
-                onClick={() => {
-                  const html = previewResume.content;
-                  const fullHtml = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>简历</title><style>body{font-family:arial;padding:40px;max-width:800px;margin:0 auto;line-height:1.6}h1{text-align:center;font-size:28px}h2{font-size:18px;border-bottom:2px solid #333;padding-bottom:8px;margin:24px 0 16px}h3{font-size:16px}.item{margin-bottom:16px}.item-header{display:flex;justify-content:space-between}.item-title{font-weight:500}.item-time{color:#999}ul{padding-left:18px}li{margin:6px 0}</style></head><body>' + html + '</body></html>';
-                  const blob = new Blob([fullHtml], { type: 'text/html' });
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = '简历.html';
-                  a.click();
-                  URL.revokeObjectURL(url);
-                }}
-                className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600"
+                key={item.id}
+                onClick={() => setActiveTab(item.id)}
+                className="flex flex-col items-center gap-1 py-1 px-3 transition-colors"
               >
-                <Download className="w-4 h-4 inline mr-1" />
-                下载HTML
+                <div className={`p-2 rounded-2xl transition-all duration-200 ${
+                  isActive ? 'bg-primary text-white shadow-floating' : 'text-outline hover:bg-surface-container'
+                }`}>
+                  <Icon className="w-5 h-5" />
+                </div>
+                <span className={`text-xs font-medium ${isActive ? 'text-primary' : 'text-outline'}`}>
+                  {item.label}
+                </span>
               </button>
-              <button
-                onClick={() => setPreviewResume(null)}
-                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200"
-              >
-                关闭
-              </button>
-            </div>
+            );
+          })}
+        </div>
+      </nav>
+
+      {/* Modals */}
+      <ExperienceModal />
+      <PreviewModal />
+
+      {/* Loading Overlay */}
+      {isLoading && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl p-6 flex flex-col items-center gap-4">
+            <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+            <p className="text-on-surface font-medium">AI is working...</p>
           </div>
         </div>
       )}

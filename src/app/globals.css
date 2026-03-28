@@ -2,29 +2,163 @@
 @tailwind components;
 @tailwind utilities;
 
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
 :root {
-  --primary: #4a9eff;
-  --primary-dark: #3a8eef;
-  --success: #52c41a;
-  --danger: #ff4d4f;
-  --warning: #faad14;
+  /* Material Design 3 Colors */
+  --primary: #423fc0;
+  --primary-container: #5b59d9;
+  --secondary: #8d2ebc;
+  --secondary-container: #d072ff;
+  --surface: #f9f9fe;
+  --surface-container: #ededf2;
+  --background: #f9f9fe;
+  --on-surface: #1a1c1f;
+  --on-surface-variant: #484553;
+  --outline: #797584;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background: #f5f5f5;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background-color: #f9f9fe;
+  background-image:
+    radial-gradient(at 0% 0%, rgba(66, 63, 192, 0.05) 0px, transparent 50%),
+    radial-gradient(at 100% 100%, rgba(141, 46, 188, 0.05) 0px, transparent 50%);
   min-height: 100vh;
+  color: var(--on-surface);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* 简历预览样式 */
+/* Glass Card Effect */
+.glass-card {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+/* Material Button Ripple Effect */
+.btn-primary {
+  @apply bg-primary text-white px-6 py-3 rounded-full font-medium transition-all duration-200;
+  box-shadow: 0 4px 14px rgba(66, 63, 192, 0.25);
+}
+
+.btn-primary:hover {
+  @apply bg-primary-container;
+  box-shadow: 0 6px 20px rgba(66, 63, 192, 0.35);
+  transform: translateY(-1px);
+}
+
+.btn-primary:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 8px rgba(66, 63, 192, 0.25);
+}
+
+.btn-secondary {
+  @apply bg-surface-container text-on-surface px-6 py-3 rounded-full font-medium transition-all duration-200 border border-outline-variant;
+}
+
+.btn-secondary:hover {
+  @apply bg-surface-container-high;
+}
+
+/* Card Styles */
+.card {
+  @apply bg-white rounded-2xl p-6;
+  box-shadow: 0 20px 40px rgba(26, 28, 31, 0.06);
+}
+
+.card-hover {
+  @apply transition-all duration-300;
+}
+
+.card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 24px 48px rgba(26, 28, 31, 0.1);
+}
+
+/* Input Styles */
+.input-field {
+  @apply w-full px-4 py-3 bg-surface-container rounded-xl border border-transparent transition-all duration-200;
+}
+
+.input-field:focus {
+  @apply border-primary outline-none;
+  box-shadow: 0 0 0 3px rgba(66, 63, 192, 0.1);
+}
+
+.input-field::placeholder {
+  @apply text-outline;
+}
+
+/* Tag Styles */
+.tag {
+  @apply inline-flex items-center px-3 py-1 rounded-full text-sm font-medium;
+}
+
+.tag-primary {
+  @apply bg-primary-fixed text-on-surface;
+}
+
+.tag-secondary {
+  @apply bg-secondary-fixed text-on-surface;
+}
+
+/* Bottom Navigation */
+.bottom-nav {
+  @apply fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-xl border-t border-outline-variant px-6 py-2 pb-safe;
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.05);
+}
+
+.nav-item {
+  @apply flex flex-col items-center gap-1 py-2 px-4 text-outline transition-colors duration-200;
+}
+
+.nav-item.active {
+  @apply text-primary;
+}
+
+/* Step Indicator */
+.step-indicator {
+  @apply flex items-center justify-center gap-2;
+}
+
+.step {
+  @apply w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium transition-all duration-200;
+}
+
+.step-active {
+  @apply bg-primary text-white;
+}
+
+.step-completed {
+  @apply bg-green-500 text-white;
+}
+
+.step-pending {
+  @apply bg-surface-container text-outline;
+}
+
+/* Resume Preview Styles */
 .resume-preview {
   padding: 40px;
+  background: white;
 }
 
 .resume-preview h1 {
   font-size: 28px;
   text-align: center;
   margin-bottom: 16px;
+  color: var(--on-surface);
 }
 
 .resume-preview .info {
@@ -33,20 +167,21 @@ body {
   gap: 16px;
   flex-wrap: wrap;
   font-size: 14px;
-  color: #666;
+  color: var(--on-surface-variant);
   margin-bottom: 24px;
 }
 
 .resume-preview h2 {
   font-size: 18px;
-  border-bottom: 2px solid #333;
+  border-bottom: 2px solid var(--on-surface);
   padding-bottom: 8px;
   margin: 24px 0 12px;
+  color: var(--on-surface);
 }
 
 .resume-preview h3 {
   font-size: 15px;
-  color: #333;
+  color: var(--on-surface);
 }
 
 .resume-preview .item {
@@ -60,16 +195,17 @@ body {
 }
 
 .resume-preview .item-title {
-  font-weight: 500;
+  font-weight: 600;
+  color: var(--on-surface);
 }
 
 .resume-preview .item-time {
-  color: #999;
+  color: var(--outline);
   font-size: 13px;
 }
 
 .resume-preview .item-role {
-  color: #666;
+  color: var(--on-surface-variant);
   font-size: 13px;
   margin-bottom: 4px;
 }
@@ -80,7 +216,72 @@ body {
 }
 
 .resume-preview li {
-  color: #666;
+  color: var(--on-surface-variant);
   font-size: 14px;
   margin: 4px 0;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--surface-container);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--outline-variant);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--outline);
+}
+
+/* Safe Area for Mobile */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+/* Loading Animation */
+@keyframes pulse-ring {
+  0% {
+    transform: scale(0.8);
+    opacity: 0.5;
+  }
+  100% {
+    transform: scale(1.2);
+    opacity: 0;
+  }
+}
+
+.loading-ring {
+  animation: pulse-ring 1.5s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+}
+
+/* Fade In Animation */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-in {
+  animation: fadeIn 0.3s ease-out forwards;
+}
+
+/* Selection Color */
+::selection {
+  background: rgba(66, 63, 192, 0.2);
+  color: var(--primary);
 }
