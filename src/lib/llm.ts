@@ -44,14 +44,15 @@ export async function extractTextFromFile(file: File): Promise<string> {
 export async function callLLM(
   apiKey: string,
   prompt: string,
-  systemPrompt: string = '你是一个专业的简历优化助手，帮助用户分析和管理简历相关事务。'
+  systemPrompt: string = '你是一个专业的简历优化助手，帮助用户分析和管理简历相关事务。',
+  provider: 'dashscope' | 'gemini' = 'dashscope'
 ): Promise<string | null> {
   if (!apiKey) {
-    alert('请先在个人资料中填写阿里云 DashScope API Key');
+    alert(`请先在个人资料中填写 ${provider === 'gemini' ? 'Google AI Studio' : '阿里云 DashScope'} API Key`);
     return null;
   }
 
-  console.log('开始调用LLM API...');
+  console.log(`开始调用LLM API... (Provider: ${provider})`);
 
   try {
     // 调用本地API代理，绕过跨域限制
@@ -61,6 +62,7 @@ export async function callLLM(
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
+        provider,
         apiKey,
         prompt,
         systemPrompt

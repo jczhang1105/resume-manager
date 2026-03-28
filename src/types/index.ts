@@ -6,7 +6,9 @@ export interface Profile {
   origin?: string;
   email?: string;
   phone?: string;
-  apiKey?: string;
+  apiKey?: string;           // 阿里云 DashScope API Key
+  geminiApiKey?: string;      // Google AI Studio API Key
+  aiProvider?: 'dashscope' | 'gemini';  // 选择的 AI 提供商
   targetJobs: string[];
 }
 

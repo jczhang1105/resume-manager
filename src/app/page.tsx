@@ -30,7 +30,9 @@ export default function ResumeManager() {
 
   // 表单状态
   const [formData, setFormData] = useState({
-    name: '', birth: '', nation: '', political: '', origin: '', email: '', phone: '', apiKey: '', targetJobs: ''
+    name: '', birth: '', nation: '', political: '', origin: '', email: '', phone: '',
+    apiKey: '', geminiApiKey: '', aiProvider: 'dashscope' as 'dashscope' | 'gemini',
+    targetJobs: ''
   });
   const [expForm, setExpForm] = useState({
     type: 'education', title: '', time: '', role: '', tags: '', desc: ''
@@ -64,6 +66,8 @@ export default function ResumeManager() {
       email: p.email || '',
       phone: p.phone || '',
       apiKey: p.apiKey || '',
+      geminiApiKey: p.geminiApiKey || '',
+      aiProvider: p.aiProvider || 'dashscope',
       targetJobs: (p.targetJobs || []).join(', ')
     });
   }, []);
@@ -79,6 +83,8 @@ export default function ResumeManager() {
       email: formData.email,
       phone: formData.phone,
       apiKey: formData.apiKey,
+      geminiApiKey: formData.geminiApiKey,
+      aiProvider: formData.aiProvider,
       targetJobs: formData.targetJobs.split(',').map(s => s.trim()).filter(s => s)
     };
     setProfile(newProfile);
@@ -115,8 +121,9 @@ export default function ResumeManager() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!formData.apiKey) {
-      alert('请先在个人资料中填写API Key');
+    const currentApiKey = formData.aiProvider === 'gemini' ? formData.geminiApiKey : formData.apiKey;
+    if (!currentApiKey) {
+      alert(`请先在个人资料中填写${formData.aiProvider === 'gemini' ? 'Google AI Studio' : '阿里云 DashScope'} API Key`);
       if (fileInputRef.current) fileInputRef.current.value = '';
       return;
     }
@@ -154,11 +161,12 @@ export default function ResumeManager() {
   // LLM智能导入（支持文本和文件）
   const handleLLMImport = async () => {
     if (!importText.trim()) { alert('请粘贴简历文本或上传文件'); return; }
-    if (!formData.apiKey) { alert('请先在个人资料中填写API Key'); return; }
+    const currentApiKey = formData.aiProvider === 'gemini' ? formData.geminiApiKey : formData.apiKey;
+    if (!currentApiKey) { alert(`请先在个人资料中填写${formData.aiProvider === 'gemini' ? 'Google AI Studio' : '阿里云 DashScope'} API Key`); return; }
 
     setIsLoading(true);
 
-    const result = await callLLM(formData.apiKey, importText, prompts.extractResume);
+    const result = await callLLM(currentApiKey, importText, prompts.extractResume, formData.aiProvider);
 
     setIsLoading(false);
 
@@ -268,7 +276,8 @@ export default function ResumeManager() {
 
   // LLM生成简历（优化版）
   const handleLLMGenerate = async () => {
-    if (!formData.apiKey) { alert('请先填写API Key'); return; }
+    const currentApiKey = formData.aiProvider === 'gemini' ? formData.geminiApiKey : formData.apiKey;
+    if (!currentApiKey) { alert(`请先填写${formData.aiProvider === 'gemini' ? 'Google AI Studio' : '阿里云 DashScope'} API Key`); return; }
 
     const selectedIds = Array.from(document.querySelectorAll('.exp-select:checked')).map(cb => parseInt((cb as HTMLInputElement).value));
     const selectedExps = experiences.filter(e => selectedIds.includes(e.id));
@@ -299,7 +308,8 @@ ${jobDesc ? '岗位JD:\n' + jobDesc : ''}
 个人经历：
 ${expText}`;
 
-    const result = await callLLM(formData.apiKey, prompt, prompts.generateResume);
+    const currentApiKey = formData.aiProvider === 'gemini' ? formData.geminiApiKey : formData.apiKey;
+    const result = await callLLM(currentApiKey, prompt, prompts.generateResume, formData.aiProvider);
 
     setIsLoading(false);
 
@@ -337,7 +347,8 @@ ${expText}`;
 
   // 简历诊断（给建议）
   const handleDiagnoseResume = async () => {
-    if (!formData.apiKey) { alert('请先填写API Key'); return; }
+    const currentApiKey = formData.aiProvider === 'gemini' ? formData.geminiApiKey : formData.apiKey;
+    if (!currentApiKey) { alert(`请先填写${formData.aiProvider === 'gemini' ? 'Google AI Studio' : '阿里云 DashScope'} API Key`); return; }
     if (experiences.length === 0) { alert('请先添加经历'); return; }
 
     setIsLoading(true);
@@ -347,7 +358,7 @@ ${expText}`;
       return `${typeNames[exp.type]}: ${exp.title}\n时间: ${exp.time}\n角色: ${exp.role}\n描述: ${exp.desc}\n技能: ${exp.tags.join(', ')}`;
     }).join('\n\n');
 
-    const result = await callLLM(formData.apiKey, resumeContent, prompts.diagnoseResume);
+    const result = await callLLM(currentApiKey, resumeContent, prompts.diagnoseResume, formData.aiProvider);
 
     setIsLoading(false);
 
@@ -368,7 +379,8 @@ ${expText}`;
 
   // 简历改写（自动改写）
   const handleRewriteResume = async () => {
-    if (!formData.apiKey) { alert('请先填写API Key'); return; }
+    const currentApiKey = formData.aiProvider === 'gemini' ? formData.geminiApiKey : formData.apiKey;
+    if (!currentApiKey) { alert(`请先填写${formData.aiProvider === 'gemini' ? 'Google AI Studio' : '阿里云 DashScope'} API Key`); return; }
     if (experiences.length === 0) { alert('请先添加经历'); return; }
 
     setIsLoading(true);
@@ -380,7 +392,8 @@ ${expText}`;
 
     const prompt = `目标岗位: ${targetJob || '通用'}\n简历内容:\n${resumeContent}`;
 
-    const result = await callLLM(formData.apiKey, prompt, prompts.rewriteResume);
+    const currentApiKey = formData.aiProvider === 'gemini' ? formData.geminiApiKey : formData.apiKey;
+    const result = await callLLM(currentApiKey, prompt, prompts.rewriteResume, formData.aiProvider);
 
     setIsLoading(false);
 
@@ -432,13 +445,14 @@ ${expText}`;
 
   // AI 岗位分析
   const handleAIAnalyzeJob = async () => {
-    if (!formData.apiKey) { alert('请先填写API Key'); return; }
+    const currentApiKey = formData.aiProvider === 'gemini' ? formData.geminiApiKey : formData.apiKey;
+    if (!currentApiKey) { alert(`请先填写${formData.aiProvider === 'gemini' ? 'Google AI Studio' : '阿里云 DashScope'} API Key`); return; }
     if (!jobDesc.trim()) { alert('请输入岗位描述'); return; }
 
     setIsLoading(true);
     setAiJobAnalysis(null);
 
-    const result = await callLLM(formData.apiKey, jobDesc, prompts.analyzeJob);
+    const result = await callLLM(currentApiKey, jobDesc, prompts.analyzeJob, formData.aiProvider);
 
     setIsLoading(false);
 
@@ -738,15 +752,36 @@ ${expText}`;
                 />
               </div>
               <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1">阿里云 DashScope API Key</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">AI 提供商</label>
+                <select
+                  value={formData.aiProvider}
+                  onChange={e => setFormData({ ...formData, aiProvider: e.target.value as 'dashscope' | 'gemini' })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="dashscope">阿里云 DashScope (通义千问)</option>
+                  <option value="gemini">Google AI Studio (Gemini)</option>
+                </select>
+                <p className="text-xs text-gray-500 mt-1">选择要使用的 AI 服务提供商</p>
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  {formData.aiProvider === 'gemini' ? 'Google AI Studio API Key' : '阿里云 DashScope API Key'}
+                </label>
                 <input
                   type="password"
-                  value={formData.apiKey}
-                  onChange={e => setFormData({ ...formData, apiKey: e.target.value })}
+                  value={formData.aiProvider === 'gemini' ? formData.geminiApiKey : formData.apiKey}
+                  onChange={e => formData.aiProvider === 'gemini'
+                    ? setFormData({ ...formData, geminiApiKey: e.target.value })
+                    : setFormData({ ...formData, apiKey: e.target.value })
+                  }
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="sk-xxxxxx 在阿里云控制台获取"
+                  placeholder={formData.aiProvider === 'gemini' ? '在 Google AI Studio 获取' : 'sk-xxxxxx 在阿里云控制台获取'}
                 />
-                <p className="text-xs text-gray-500 mt-1">用于调用通义千问模型，使功能更智能</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  {formData.aiProvider === 'gemini'
+                    ? '用于调用 Gemini 模型，在 Google AI Studio 获取免费 API Key'
+                    : '用于调用通义千问模型，在阿里云控制台获取'}
+                </p>
               </div>
             </div>
             <button
