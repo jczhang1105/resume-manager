@@ -545,7 +545,7 @@ ${jobDesc ? '岗位JD:\n' + jobDesc : ''}
               <div className="relative z-10">
                 <span className="material-symbols-outlined mb-2">lightbulb</span>
                 <h5 className="text-sm font-bold mb-2">效率小贴士</h5>
-                <p className="text-white/80 text-xs leading-relaxed mb-4">添加具体的量化结果（例如"增加收入 20%"）可以让您的经历在 ATS 系统中脱颖而出。</p>
+                <p className="text-white/80 text-xs leading-relaxed mb-4">添加具体的量化结果（例如&quot;增加收入 20%&quot;）可以让您的经历在 ATS 系统中脱颖而出。</p>
                 <button className="w-full py-2 bg-white text-primary text-[10px] font-bold rounded-lg hover:bg-opacity-90 transition-all uppercase tracking-widest">了解更多</button>
               </div>
             </div>
