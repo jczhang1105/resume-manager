@@ -58,7 +58,12 @@ git push origin main
 
 ## API Key 获取
 
-访问 [阿里云 DashScope](https://dashscope.aliyun.com/) 注册并获取 API Key。
+访问 [阿里云 DashScope](https://dashscope.aliyun.com/) 或 [Google AI Studio](https://aistudio.google.com/app/apikey) 注册并获取 API Key。
+
+## 项目文档
+
+- [项目详情](./docs/README.md) - 项目结构、配置说明
+- [Stitch AI 集成](./docs/stitch-integration.md) - 设计系统整合过程
 
 ## License
 
